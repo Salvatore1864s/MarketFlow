@@ -1,9 +1,9 @@
-
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Orders.Api.Data;
+using Orders.Api.Messaging;
 using Orders.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -55,6 +55,22 @@ builder.Services.AddHttpClient<CatalogClient>(client =>
 {
     client.BaseAddress = new Uri(catalogBaseUrl);
 });
+
+// RabbitMQ connection
+builder.Services.AddSingleton<RabbitMqConnection>(_ =>
+    RabbitMqConnection.CreateAsync(builder.Configuration)
+        .GetAwaiter()
+        .GetResult());
+
+// Message publishers
+builder.Services.AddSingleton<InventoryCommandPublisher>();
+builder.Services.AddSingleton<PaymentCommandPublisher>();
+builder.Services.AddSingleton<InventoryReservationCommandPublisher>();
+
+// Message consumers
+builder.Services.AddHostedService<InventoryReservationResultConsumer>();
+builder.Services.AddHostedService<PaymentResultConsumer>();
+builder.Services.AddHostedService<InventoryReservationCommandResultConsumer>();
 
 builder.Services.AddAuthorization();
 

@@ -15,9 +15,13 @@
   <Folder Name="/src/Orders/">
     <Project Path="src/Orders/Orders.Api/Orders.Api.csproj" />
   </Folder>
+  <Folder Name="/src/Payment/">
+    <Project Path="src/Payment/Payment.Api/Payment.Api.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Catalog.Tests/Catalog.Tests.csproj" />
     <Project Path="tests/Inventory.Tests/Inventory.Tests.csproj" />
     <Project Path="tests/Orders.Tests/Orders.Tests.csproj" />
+    <Project Path="tests/Payment.Tests/Payment.Tests.csproj" />
   </Folder>
 </Solution>

@@ -3,9 +3,12 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Orders.Api.Data;
 using Orders.Api.DTOs;
 using Orders.Api.Enums;
+using Orders.Api.Messaging;
+using Orders.Api.Messaging.Contracts;
 using Orders.Api.Models;
 using Orders.Api.Services;
 
@@ -18,7 +21,21 @@ public class OrdersController : ControllerBase
 {
     private readonly OrdersDbContext _dbContext;
     private readonly CatalogClient _catalogClient;
+    private readonly InventoryCommandPublisher? _inventoryPublisher;
 
+    // Основной конструктор для приложения.
+    [ActivatorUtilitiesConstructor]
+    public OrdersController(
+        OrdersDbContext dbContext,
+        CatalogClient catalogClient,
+        InventoryCommandPublisher inventoryPublisher)
+    {
+        _dbContext = dbContext;
+        _catalogClient = catalogClient;
+        _inventoryPublisher = inventoryPublisher;
+    }
+
+    // Для существующих тестов.
     public OrdersController(
         OrdersDbContext dbContext,
         CatalogClient catalogClient)
@@ -79,6 +96,24 @@ public class OrdersController : ControllerBase
         _dbContext.Orders.Add(order);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        if (_inventoryPublisher != null)
+        {
+            var message = new ReserveStockMessage
+            {
+                OrderId = order.Id,
+                Items = order.Items.Select(item =>
+                    new ReserveStockItemMessage
+                    {
+                        ProductId = item.ProductId,
+                        Quantity = item.Quantity
+                    }).ToList()
+            };
+
+            await _inventoryPublisher.PublishReserveAsync(
+                message,
+                cancellationToken);
+        }
 
         return CreatedAtAction(
             nameof(GetById),

@@ -1,7 +1,7 @@
-
 using System.Text;
 using Inventory.Api.Clients;
 using Inventory.Api.Data;
+using Inventory.Api.Messaging;
 using Inventory.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -59,7 +59,20 @@ builder.Services.AddHttpClient<CatalogClient>(client =>
     client.BaseAddress = new Uri(catalogBaseUrl);
 });
 
+// RabbitMQ
+builder.Services.AddSingleton<RabbitMqConnection>(_ =>
+    RabbitMqConnection.CreateAsync(builder.Configuration)
+        .GetAwaiter()
+        .GetResult());
+
+// Services and publishers
 builder.Services.AddScoped<InventoryService>();
+builder.Services.AddScoped<ReservationResultPublisher>();
+builder.Services.AddSingleton<ReservationCommandResultPublisher>();;
+
+// Consumers
+builder.Services.AddHostedService<InventoryMessageConsumer>();
+builder.Services.AddHostedService<ReservationCommandConsumer>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();

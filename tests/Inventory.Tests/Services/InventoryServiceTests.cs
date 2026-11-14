@@ -386,7 +386,7 @@ public class InventoryServiceTests
     }
 
     [Fact]
-    public async Task ConfirmReservation_ReturnsFalse_WhenAlreadyConfirmed()
+    public async Task ConfirmReservation_ReturnsTrue_WhenAlreadyConfirmed()
     {
         using var context = CreateDbContext();
 
@@ -413,7 +413,7 @@ public class InventoryServiceTests
         var secondResult =
             await service.ConfirmReservationAsync(orderId);
 
-        Assert.False(secondResult);
+        Assert.True(secondResult);
         Assert.Equal(17, stock.AvailableQuantity);
         Assert.Equal(0, stock.ReservedQuantity);
     }
@@ -452,7 +452,7 @@ public class InventoryServiceTests
     }
 
     [Fact]
-    public async Task ReleaseReservation_ReturnsFalse_WhenAlreadyReleased()
+    public async Task ReleaseReservation_ReturnsTrue_WhenAlreadyReleased()
     {
         using var context = CreateDbContext();
 
@@ -479,7 +479,7 @@ public class InventoryServiceTests
         var secondResult =
             await service.ReleaseReservationAsync(orderId);
 
-        Assert.False(secondResult);
+        Assert.True(secondResult);
         Assert.Equal(0, stock.ReservedQuantity);
         Assert.Equal(1, context.StockReservations.Count());
     }

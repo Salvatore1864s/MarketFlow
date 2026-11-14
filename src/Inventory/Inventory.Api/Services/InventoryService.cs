@@ -75,6 +75,55 @@ public class InventoryService
         return ToResponse(stock);
     }
 
+    public async Task<bool> ReserveStockIdempotentlyAsync(
+        ReserveStockRequest request)
+    {
+        if (request.OrderId == Guid.Empty ||
+            request.Items.Count == 0)
+        {
+            return false;
+        }
+
+        var existingReservations = await _dbContext.StockReservations
+            .AsNoTracking()
+            .Where(x => x.OrderId == request.OrderId)
+            .OrderBy(x => x.ProductId)
+            .ToListAsync();
+
+        if (existingReservations.Count > 0)
+        {
+            if (existingReservations.Any(
+                x => x.Status != ReservationStatus.Pending))
+            {
+                return false;
+            }
+
+            var requestedItems = request.Items
+                .OrderBy(x => x.ProductId)
+                .ToList();
+
+            if (existingReservations.Count != requestedItems.Count)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < requestedItems.Count; i++)
+            {
+                if (existingReservations[i].ProductId !=
+                        requestedItems[i].ProductId ||
+                    existingReservations[i].Quantity !=
+                        requestedItems[i].Quantity)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return await ReserveStockAsync(request);
+    }
+
     public async Task<bool> ReserveStockAsync(
         ReserveStockRequest request)
     {
@@ -175,8 +224,22 @@ public class InventoryService
             .OrderBy(x => x.ProductId)
             .ToListAsync();
 
-        if (reservations.Count == 0 ||
-            reservations.Any(x => x.Status != ReservationStatus.Pending))
+        if (reservations.Count == 0)
+        {
+            await transaction.RollbackAsync();
+            return false;
+        }
+
+        // Повторная команда подтверждения.
+        if (reservations.All(
+            x => x.Status == ReservationStatus.Confirmed))
+        {
+            await transaction.CommitAsync();
+            return true;
+        }
+
+        if (reservations.Any(
+            x => x.Status != ReservationStatus.Pending))
         {
             await transaction.RollbackAsync();
             return false;
@@ -223,8 +286,22 @@ public class InventoryService
             .OrderBy(x => x.ProductId)
             .ToListAsync();
 
-        if (reservations.Count == 0 ||
-            reservations.Any(x => x.Status != ReservationStatus.Pending))
+        if (reservations.Count == 0)
+        {
+            await transaction.RollbackAsync();
+            return false;
+        }
+
+        // Повторная команда освобождения.
+        if (reservations.All(
+            x => x.Status == ReservationStatus.Released))
+        {
+            await transaction.CommitAsync();
+            return true;
+        }
+
+        if (reservations.Any(
+            x => x.Status != ReservationStatus.Pending))
         {
             await transaction.RollbackAsync();
             return false;
