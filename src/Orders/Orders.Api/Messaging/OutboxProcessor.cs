@@ -1,24 +1,32 @@
 
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Orders.Api.Data;
 using Orders.Api.Messaging.Contracts;
-using System.Text.Json;
+using Orders.Api.Models;
+using Inventory.Api.Messaging.Contracts;
 
 namespace Orders.Api.Messaging;
 
 public class OutboxProcessor : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly InventoryCommandPublisher _publisher;
+    private readonly InventoryCommandPublisher _inventoryPublisher;
+    private readonly PaymentCommandPublisher _paymentPublisher;
+    private readonly InventoryReservationCommandPublisher _reservationPublisher;
     private readonly ILogger<OutboxProcessor> _logger;
 
     public OutboxProcessor(
         IServiceScopeFactory scopeFactory,
-        InventoryCommandPublisher publisher,
+        InventoryCommandPublisher inventoryPublisher,
+        PaymentCommandPublisher paymentPublisher,
+        InventoryReservationCommandPublisher reservationPublisher,
         ILogger<OutboxProcessor> logger)
     {
         _scopeFactory = scopeFactory;
-        _publisher = publisher;
+        _inventoryPublisher = inventoryPublisher;
+        _paymentPublisher = paymentPublisher;
+        _reservationPublisher = reservationPublisher;
         _logger = logger;
     }
 
@@ -69,19 +77,8 @@ public class OutboxProcessor : BackgroundService
         {
             try
             {
-                if (outboxMessage.EventType != "inventory.reserve")
-                {
-                    throw new InvalidOperationException(
-                        $"Unknown Outbox event type: {outboxMessage.EventType}");
-                }
-
-                var message = JsonSerializer.Deserialize<ReserveStockMessage>(
-                    outboxMessage.Payload)
-                    ?? throw new InvalidOperationException(
-                        "Failed to deserialize Outbox message.");
-
-                await _publisher.PublishReserveAsync(
-                    message,
+                await PublishMessageAsync(
+                    outboxMessage,
                     cancellationToken);
 
                 outboxMessage.ProcessedAtUtc = DateTime.UtcNow;
@@ -91,8 +88,9 @@ public class OutboxProcessor : BackgroundService
                 await dbContext.SaveChangesAsync(cancellationToken);
 
                 _logger.LogInformation(
-                    "Outbox message {MessageId} published successfully.",
-                    outboxMessage.Id);
+                    "Outbox message {MessageId} of type {EventType} published successfully.",
+                    outboxMessage.Id,
+                    outboxMessage.EventType);
             }
             catch (OperationCanceledException)
                 when (cancellationToken.IsCancellationRequested)
@@ -108,9 +106,82 @@ public class OutboxProcessor : BackgroundService
 
                 _logger.LogError(
                     exception,
-                    "Failed to publish Outbox message {MessageId}.",
-                    outboxMessage.Id);
+                    "Failed to publish Outbox message {MessageId} of type {EventType}.",
+                    outboxMessage.Id,
+                    outboxMessage.EventType);
             }
+        }
+    }
+
+    private async Task PublishMessageAsync(
+        OutboxMessage outboxMessage,
+        CancellationToken cancellationToken)
+    {
+        switch (outboxMessage.EventType)
+        {
+            case "inventory.reserve":
+            {
+                var message =
+                    JsonSerializer.Deserialize<ReserveStockMessage>(
+                        outboxMessage.Payload)
+                    ?? throw new InvalidOperationException(
+                        "Failed to deserialize inventory.reserve message.");
+
+                await _inventoryPublisher.PublishReserveAsync(
+                    message,
+                    cancellationToken);
+
+                break;
+            }
+
+            case "payment.process":
+            {
+                var message =
+                    JsonSerializer.Deserialize<ProcessPaymentMessage>(
+                        outboxMessage.Payload)
+                    ?? throw new InvalidOperationException(
+                        "Failed to deserialize payment.process message.");
+
+                await _paymentPublisher.PublishAsync(
+                    message,
+                    cancellationToken);
+
+                break;
+            }
+
+            case "inventory.confirm":
+            {
+                var message =
+                    JsonSerializer.Deserialize<ReservationCommandMessage>(
+                        outboxMessage.Payload)
+                    ?? throw new InvalidOperationException(
+                        "Failed to deserialize inventory.confirm message.");
+
+                await _reservationPublisher.ConfirmAsync(
+                    message.OrderId,
+                    cancellationToken);
+
+                break;
+            }
+
+            case "inventory.release":
+            {
+                var message =
+                    JsonSerializer.Deserialize<ReservationCommandMessage>(
+                        outboxMessage.Payload)
+                    ?? throw new InvalidOperationException(
+                        "Failed to deserialize inventory.release message.");
+
+                await _reservationPublisher.ReleaseAsync(
+                    message.OrderId,
+                    cancellationToken);
+
+                break;
+            }
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unknown Outbox event type: {outboxMessage.EventType}");
         }
     }
 }

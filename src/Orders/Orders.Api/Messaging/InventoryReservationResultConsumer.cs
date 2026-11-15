@@ -16,20 +16,17 @@ public class InventoryReservationResultConsumer : BackgroundService
 
     private readonly RabbitMqConnection _connection;
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly PaymentCommandPublisher _paymentPublisher;
     private readonly ILogger<InventoryReservationResultConsumer> _logger;
     private readonly IConfiguration _configuration;
 
     public InventoryReservationResultConsumer(
         RabbitMqConnection connection,
         IServiceScopeFactory scopeFactory,
-        PaymentCommandPublisher paymentPublisher,
         ILogger<InventoryReservationResultConsumer> logger,
         IConfiguration configuration)
     {
         _connection = connection;
         _scopeFactory = scopeFactory;
-        _paymentPublisher = paymentPublisher;
         _logger = logger;
         _configuration = configuration;
     }
@@ -135,17 +132,23 @@ public class InventoryReservationResultConsumer : BackgroundService
                     return;
                 }
 
-                await _paymentPublisher.PublishAsync(
-                    new ProcessPaymentMessage
-                    {
-                        OrderId = order.Id,
-                        BuyerId = order.BuyerId,
-                        Amount = order.TotalAmount,
-                        Currency = "RUB",
-                        SimulateFailure = _configuration.GetValue<bool>(
-                            "Payment:SimulateFailure")
-                    },
-                    stoppingToken);
+                var paymentMessage = new ProcessPaymentMessage
+                {
+                    OrderId = order.Id,
+                    BuyerId = order.BuyerId,
+                    Amount = order.TotalAmount,
+                    Currency = "RUB",
+                    SimulateFailure = _configuration.GetValue<bool>(
+                        "Payment:SimulateFailure")
+                };
+
+                var outboxMessage = new OutboxMessage
+                {
+                    EventType = "payment.process",
+                    Payload = JsonSerializer.Serialize(paymentMessage)
+                };
+
+                dbContext.OutboxMessages.Add(outboxMessage);
 
                 order.Status = OrderStatus.AwaitingPayment;
                 order.UpdatedAt = DateTime.UtcNow;
@@ -158,7 +161,7 @@ public class InventoryReservationResultConsumer : BackgroundService
                     cancellationToken: stoppingToken);
 
                 _logger.LogInformation(
-                    "Payment command published for order {OrderId}.",
+                    "Payment command added to Outbox for order {OrderId}.",
                     order.Id);
             }
             catch (JsonException exception)

@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using Orders.Api.Data;
 using Orders.Api.Enums;
 using Orders.Api.Messaging.Contracts;
+using Orders.Api.Models;
+using Inventory.Api.Messaging.Contracts;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -15,18 +17,15 @@ public class PaymentResultConsumer : BackgroundService
 
     private readonly RabbitMqConnection _connection;
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly InventoryReservationCommandPublisher _inventoryPublisher;
     private readonly ILogger<PaymentResultConsumer> _logger;
 
     public PaymentResultConsumer(
         RabbitMqConnection connection,
         IServiceScopeFactory scopeFactory,
-        InventoryReservationCommandPublisher inventoryPublisher,
         ILogger<PaymentResultConsumer> logger)
     {
         _connection = connection;
         _scopeFactory = scopeFactory;
-        _inventoryPublisher = inventoryPublisher;
         _logger = logger;
     }
 
@@ -109,26 +108,15 @@ public class PaymentResultConsumer : BackgroundService
                     return;
                 }
 
+                string eventType;
+
                 if (message.Status == 1)
                 {
-                    await _inventoryPublisher.ConfirmAsync(
-                        order.Id,
-                        stoppingToken);
-
-                    _logger.LogInformation(
-                        "Inventory confirmation requested for order {OrderId}.",
-                        order.Id);
+                    eventType = "inventory.confirm";
                 }
                 else if (message.Status == 2)
                 {
-                    await _inventoryPublisher.ReleaseAsync(
-                        order.Id,
-                        stoppingToken);
-
-                    _logger.LogWarning(
-                        "Inventory release requested for order {OrderId}. Reason: {Reason}",
-                        order.Id,
-                        message.FailureReason);
+                    eventType = "inventory.release";
                 }
                 else
                 {
@@ -145,10 +133,63 @@ public class PaymentResultConsumer : BackgroundService
                     return;
                 }
 
+                // Проверяем, не создавалась ли уже команда
+                // для этого заказа при предыдущей доставке сообщения.
+                var commandAlreadyExists =
+                    await dbContext.OutboxMessages.AnyAsync(
+                        item =>
+                            (item.EventType == "inventory.confirm" ||
+                             item.EventType == "inventory.release") &&
+                            item.Payload.Contains(order.Id.ToString()),
+                        stoppingToken);
+
+                if (commandAlreadyExists)
+                {
+                    _logger.LogInformation(
+                        "Inventory command for order {OrderId} already exists in Outbox. Duplicate payment result ignored.",
+                        order.Id);
+
+                    await channel.BasicAckAsync(
+                        eventArgs.DeliveryTag,
+                        multiple: false,
+                        cancellationToken: stoppingToken);
+
+                    return;
+                }
+
+                var inventoryCommand = new ReservationCommandMessage
+                {
+                    OrderId = order.Id
+                };
+
+                var outboxMessage = new OutboxMessage
+                {
+                    EventType = eventType,
+                    Payload = JsonSerializer.Serialize(inventoryCommand)
+                };
+
+                dbContext.OutboxMessages.Add(outboxMessage);
+
+                await dbContext.SaveChangesAsync(stoppingToken);
+
                 await channel.BasicAckAsync(
                     eventArgs.DeliveryTag,
                     multiple: false,
                     cancellationToken: stoppingToken);
+
+                if (message.Status == 1)
+                {
+                    _logger.LogInformation(
+                        "Inventory confirmation added to Outbox for order {OrderId}.",
+                        order.Id);
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Inventory release added to Outbox for order {OrderId}. Reason: {Reason}",
+                        order.Id,
+                        message.FailureReason);
+                }
             }
             catch (JsonException exception)
             {
