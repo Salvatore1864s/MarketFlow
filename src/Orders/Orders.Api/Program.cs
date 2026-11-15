@@ -67,6 +67,9 @@ builder.Services.AddSingleton<InventoryCommandPublisher>();
 builder.Services.AddSingleton<PaymentCommandPublisher>();
 builder.Services.AddSingleton<InventoryReservationCommandPublisher>();
 
+// Outbox processor
+builder.Services.AddHostedService<OutboxProcessor>();
+
 // Message consumers
 builder.Services.AddHostedService<InventoryReservationResultConsumer>();
 builder.Services.AddHostedService<PaymentResultConsumer>();

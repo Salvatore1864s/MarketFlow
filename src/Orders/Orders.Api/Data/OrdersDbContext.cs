@@ -1,3 +1,4 @@
+
 using Microsoft.EntityFrameworkCore;
 using Orders.Api.Models;
 
@@ -13,6 +14,8 @@ public class OrdersDbContext : DbContext
     public DbSet<Order> Orders => Set<Order>();
 
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -56,6 +59,22 @@ public class OrdersDbContext : DbContext
                 .HasPrecision(18, 2);
 
             entity.HasIndex(i => i.ProductId);
+        });
+
+        modelBuilder.Entity<OutboxMessage>(entity =>
+        {
+            entity.HasKey(message => message.Id);
+
+            entity.Property(message => message.EventType)
+                .IsRequired()
+                .HasMaxLength(200);
+
+            entity.Property(message => message.Payload)
+                .IsRequired();
+
+            entity.HasIndex(message => message.ProcessedAtUtc);
+
+            entity.HasIndex(message => message.CreatedAtUtc);
         });
     }
 }
