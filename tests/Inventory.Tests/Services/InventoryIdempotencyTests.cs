@@ -184,6 +184,96 @@ public class InventoryIdempotencyTests
             context.StockReservations.Single().Status);
     }
 
+    [Fact]
+public async Task ConfirmReservation_ReturnsTrue_WhenCommandIsRepeated()
+{
+    using var context = CreateDbContext();
+
+    var stock = new StockItem
+    {
+        ProductId = Guid.NewGuid(),
+        SellerId = "seller-1",
+        AvailableQuantity = 20,
+        ReservedQuantity = 3
+    };
+
+    var orderId = Guid.NewGuid();
+
+    context.StockItems.Add(stock);
+    context.StockReservations.Add(new StockReservation
+    {
+        OrderId = orderId,
+        ProductId = stock.ProductId,
+        Quantity = 3,
+        Status = ReservationStatus.Pending
+    });
+
+    await context.SaveChangesAsync();
+
+    var service = CreateService(context);
+
+    var firstResult =
+        await service.ConfirmReservationAsync(orderId);
+
+    var secondResult =
+        await service.ConfirmReservationAsync(orderId);
+
+    Assert.True(firstResult);
+    Assert.True(secondResult);
+
+    Assert.Equal(17, stock.AvailableQuantity);
+    Assert.Equal(0, stock.ReservedQuantity);
+
+    Assert.Equal(
+        ReservationStatus.Confirmed,
+        context.StockReservations.Single().Status);
+}
+
+[Fact]
+public async Task ReleaseReservation_ReturnsTrue_WhenCommandIsRepeated()
+{
+    using var context = CreateDbContext();
+
+    var stock = new StockItem
+    {
+        ProductId = Guid.NewGuid(),
+        SellerId = "seller-1",
+        AvailableQuantity = 20,
+        ReservedQuantity = 3
+    };
+
+    var orderId = Guid.NewGuid();
+
+    context.StockItems.Add(stock);
+    context.StockReservations.Add(new StockReservation
+    {
+        OrderId = orderId,
+        ProductId = stock.ProductId,
+        Quantity = 3,
+        Status = ReservationStatus.Pending
+    });
+
+    await context.SaveChangesAsync();
+
+    var service = CreateService(context);
+
+    var firstResult =
+        await service.ReleaseReservationAsync(orderId);
+
+    var secondResult =
+        await service.ReleaseReservationAsync(orderId);
+
+    Assert.True(firstResult);
+    Assert.True(secondResult);
+
+    Assert.Equal(20, stock.AvailableQuantity);
+    Assert.Equal(0, stock.ReservedQuantity);
+
+    Assert.Equal(
+        ReservationStatus.Released,
+        context.StockReservations.Single().Status);
+}
+
     private sealed class TestHttpMessageHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(

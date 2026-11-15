@@ -1,8 +1,10 @@
+
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Orders.Api.Data;
+using Orders.Api.Hubs;
 using Orders.Api.Messaging;
 using Orders.Api.Services;
 
@@ -46,6 +48,24 @@ builder.Services
 
             ClockSkew = TimeSpan.Zero
         };
+
+        // SignalR передаёт JWT через query string при WebSocket-подключении.
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+
+                if (!string.IsNullOrEmpty(accessToken) &&
+                    path.StartsWithSegments("/hubs/orders"))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            }
+        };
     });
 
 var catalogBaseUrl = builder.Configuration["Services:Catalog:BaseUrl"]
@@ -56,26 +76,24 @@ builder.Services.AddHttpClient<CatalogClient>(client =>
     client.BaseAddress = new Uri(catalogBaseUrl);
 });
 
-// RabbitMQ connection
 builder.Services.AddSingleton<RabbitMqConnection>(_ =>
     RabbitMqConnection.CreateAsync(builder.Configuration)
         .GetAwaiter()
         .GetResult());
 
-// Message publishers
 builder.Services.AddSingleton<InventoryCommandPublisher>();
 builder.Services.AddSingleton<PaymentCommandPublisher>();
 builder.Services.AddSingleton<InventoryReservationCommandPublisher>();
 
-// Outbox processor
 builder.Services.AddHostedService<OutboxProcessor>();
 
-// Message consumers
 builder.Services.AddHostedService<InventoryReservationResultConsumer>();
 builder.Services.AddHostedService<PaymentResultConsumer>();
 builder.Services.AddHostedService<InventoryReservationCommandResultConsumer>();
 
 builder.Services.AddAuthorization();
+
+builder.Services.AddSignalR();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
@@ -91,5 +109,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+app.MapHub<OrdersHub>("/hubs/orders");
 
 app.Run();

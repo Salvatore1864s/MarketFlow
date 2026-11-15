@@ -1,8 +1,10 @@
 
 using System.Text.Json;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Orders.Api.Data;
 using Orders.Api.Enums;
+using Orders.Api.Hubs;
 using Orders.Api.Messaging.Contracts;
 using Orders.Api.Models;
 using RabbitMQ.Client;
@@ -18,17 +20,20 @@ public class InventoryReservationResultConsumer : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<InventoryReservationResultConsumer> _logger;
     private readonly IConfiguration _configuration;
+    private readonly IHubContext<OrdersHub> _hubContext;
 
     public InventoryReservationResultConsumer(
         RabbitMqConnection connection,
         IServiceScopeFactory scopeFactory,
         ILogger<InventoryReservationResultConsumer> logger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IHubContext<OrdersHub> hubContext)
     {
         _connection = connection;
         _scopeFactory = scopeFactory;
         _logger = logger;
         _configuration = configuration;
+        _hubContext = hubContext;
     }
 
     protected override async Task ExecuteAsync(
@@ -119,6 +124,10 @@ public class InventoryReservationResultConsumer : BackgroundService
 
                     await dbContext.SaveChangesAsync(stoppingToken);
 
+                    await SendStatusNotificationAsync(
+                        order,
+                        stoppingToken);
+
                     _logger.LogWarning(
                         "Order {OrderId} cancelled. Reason: {Reason}",
                         order.Id,
@@ -154,6 +163,10 @@ public class InventoryReservationResultConsumer : BackgroundService
                 order.UpdatedAt = DateTime.UtcNow;
 
                 await dbContext.SaveChangesAsync(stoppingToken);
+
+                await SendStatusNotificationAsync(
+                    order,
+                    stoppingToken);
 
                 await channel.BasicAckAsync(
                     eventArgs.DeliveryTag,
@@ -214,6 +227,33 @@ public class InventoryReservationResultConsumer : BackgroundService
             when (stoppingToken.IsCancellationRequested)
         {
             // Normal shutdown.
+        }
+    }
+
+    private async Task SendStatusNotificationAsync(
+        Orders.Api.Models.Order order,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _hubContext.Clients
+                .Group(OrdersHub.GetBuyerGroupName(order.BuyerId))
+                .SendAsync(
+                    "OrderStatusChanged",
+                    new
+                    {
+                        orderId = order.Id,
+                        status = order.Status.ToString(),
+                        updatedAt = order.UpdatedAt
+                    },
+                    cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Could not send SignalR notification for order {OrderId}.",
+                order.Id);
         }
     }
 }

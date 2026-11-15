@@ -1,8 +1,10 @@
 
 using System.Text.Json;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Orders.Api.Data;
 using Orders.Api.Enums;
+using Orders.Api.Hubs;
 using Orders.Api.Messaging.Contracts;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
@@ -15,15 +17,18 @@ public class InventoryReservationCommandResultConsumer : BackgroundService
 
     private readonly RabbitMqConnection _connection;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IHubContext<OrdersHub> _hubContext;
     private readonly ILogger<InventoryReservationCommandResultConsumer> _logger;
 
     public InventoryReservationCommandResultConsumer(
         RabbitMqConnection connection,
         IServiceScopeFactory scopeFactory,
+        IHubContext<OrdersHub> hubContext,
         ILogger<InventoryReservationCommandResultConsumer> logger)
     {
         _connection = connection;
         _scopeFactory = scopeFactory;
+        _hubContext = hubContext;
         _logger = logger;
     }
 
@@ -155,6 +160,28 @@ public class InventoryReservationCommandResultConsumer : BackgroundService
                 order.UpdatedAt = DateTime.UtcNow;
 
                 await dbContext.SaveChangesAsync(stoppingToken);
+
+                try
+                {
+                    await _hubContext.Clients
+                        .Group(OrdersHub.GetBuyerGroupName(order.BuyerId))
+                        .SendAsync(
+                            "OrderStatusChanged",
+                            new
+                            {
+                                orderId = order.Id,
+                                status = order.Status.ToString(),
+                                updatedAt = order.UpdatedAt
+                            },
+                            stoppingToken);
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogWarning(
+                        exception,
+                        "Could not send SignalR notification for order {OrderId}.",
+                        order.Id);
+                }
 
                 await channel.BasicAckAsync(
                     eventArgs.DeliveryTag,
