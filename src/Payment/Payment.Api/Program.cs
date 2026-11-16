@@ -69,4 +69,10 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+await using (var migrationScope = app.Services.CreateAsyncScope())
+{
+    var db = migrationScope.ServiceProvider.GetRequiredService<PaymentDbContext>();
+    await db.Database.MigrateAsync();
+}
+
 app.Run();

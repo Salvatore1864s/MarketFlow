@@ -26,5 +26,8 @@ public record UpdateProductRequest(
     [StringLength(100, MinimumLength = 2)]
     string Category,
 
-    bool IsActive
+    bool IsActive,
+
+    [StringLength(2048)]
+    string? ImageUrl = null
 );

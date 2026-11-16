@@ -43,6 +43,11 @@ public class CatalogDbContext : DbContext
             entity.Property(product => product.SellerId)
                 .IsRequired();
 
+            // Явно включаем URL фотографии в модель EF Core.
+            entity.Property(product => product.ImageUrl)
+                .HasColumnType("text")
+                .IsRequired(false);
+
             entity.HasIndex(product => product.SellerId);
             entity.HasIndex(product => product.Category);
         });

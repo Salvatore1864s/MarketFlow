@@ -11,5 +11,6 @@ public record ProductResponse(
     string SellerId,
     DateTime CreatedAt,
     DateTime? UpdatedAt,
-    bool IsActive
+    bool IsActive,
+    string? ImageUrl
 );

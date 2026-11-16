@@ -20,6 +20,7 @@ public class InventoryController : ControllerBase
     }
 
     [HttpGet("{productId:guid}")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetStock(Guid productId)
     {
         var stock = await _inventoryService.GetStockAsync(productId);
@@ -68,6 +69,43 @@ public class InventoryController : ControllerBase
             return Conflict(new { message = ex.Message });
         }
     }
+
+    [HttpPut("{productId:guid}")]
+[Authorize(Roles = "Seller,Admin")]
+public async Task<IActionResult> UpdateStock(
+    Guid productId,
+    UpdateStockRequest request)
+{
+    var sellerId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+    if (string.IsNullOrEmpty(sellerId))
+        return Unauthorized();
+
+    var isAdmin = User.IsInRole("Admin");
+
+    try
+    {
+        var stock = await _inventoryService.UpdateStockAsync(
+            productId,
+            request,
+            sellerId,
+            isAdmin);
+
+        return Ok(stock);
+    }
+    catch (KeyNotFoundException ex)
+    {
+        return NotFound(new { message = ex.Message });
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Forbid();
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Conflict(new { message = ex.Message });
+    }
+}
 
     [HttpPost("reserve")]
     [Authorize(Roles = "Buyer")]

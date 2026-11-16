@@ -112,4 +112,10 @@ app.MapControllers();
 
 app.MapHub<OrdersHub>("/hubs/orders");
 
+await using (var migrationScope = app.Services.CreateAsyncScope())
+{
+    var db = migrationScope.ServiceProvider.GetRequiredService<OrdersDbContext>();
+    await db.Database.MigrateAsync();
+}
+
 app.Run();

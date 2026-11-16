@@ -24,5 +24,8 @@ public record CreateProductRequest(
 
     [Required]
     [StringLength(100, MinimumLength = 2)]
-    string Category
+    string Category,
+
+    [StringLength(2048)]
+    string? ImageUrl = null
 );

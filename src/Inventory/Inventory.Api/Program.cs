@@ -89,4 +89,10 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+await using (var migrationScope = app.Services.CreateAsyncScope())
+{
+    var db = migrationScope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+    await db.Database.MigrateAsync();
+}
+
 app.Run();

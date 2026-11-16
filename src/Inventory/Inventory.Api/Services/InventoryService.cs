@@ -75,6 +75,34 @@ public class InventoryService
         return ToResponse(stock);
     }
 
+    public async Task<StockResponse> UpdateStockAsync(
+    Guid productId,
+    UpdateStockRequest request,
+    string sellerId,
+    bool isAdmin)
+{
+    var stock = await _dbContext.StockItems
+        .FirstOrDefaultAsync(x => x.ProductId == productId);
+
+    if (stock is null)
+        throw new KeyNotFoundException("Stock not found.");
+
+    if (!isAdmin && stock.SellerId != sellerId)
+        throw new UnauthorizedAccessException(
+            "You cannot manage stock for another seller's product.");
+
+    if (request.Quantity < stock.ReservedQuantity)
+        throw new InvalidOperationException(
+            "Quantity cannot be less than reserved quantity.");
+
+    stock.AvailableQuantity = request.Quantity;
+    stock.UpdatedAt = DateTime.UtcNow;
+
+    await _dbContext.SaveChangesAsync();
+
+    return ToResponse(stock);
+}
+
     public async Task<bool> ReserveStockIdempotentlyAsync(
         ReserveStockRequest request)
     {

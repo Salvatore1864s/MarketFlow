@@ -20,7 +20,6 @@ public class ProductsController : ControllerBase
         _dbContext = dbContext;
     }
 
-    // Получить все активные товары
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
@@ -38,14 +37,14 @@ public class ProductsController : ControllerBase
                 product.SellerId,
                 product.CreatedAt,
                 product.UpdatedAt,
-                product.IsActive
+                product.IsActive,
+                product.ImageUrl
             ))
             .ToListAsync();
 
         return Ok(products);
     }
 
-    // Получить один товар
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
@@ -55,14 +54,11 @@ public class ProductsController : ControllerBase
                 product.Id == id && product.IsActive);
 
         if (product == null)
-        {
             return NotFound();
-        }
 
         return Ok(ToResponse(product));
     }
 
-    // Создать товар
     [Authorize(Roles = "Seller,Admin")]
     [HttpPost]
     public async Task<IActionResult> Create(
@@ -72,9 +68,7 @@ public class ProductsController : ControllerBase
             ClaimTypes.NameIdentifier);
 
         if (string.IsNullOrEmpty(sellerId))
-        {
             return Unauthorized();
-        }
 
         var product = new Product
         {
@@ -83,7 +77,8 @@ public class ProductsController : ControllerBase
             Price = request.Price,
             Currency = request.Currency,
             Category = request.Category,
-            SellerId = sellerId
+            SellerId = sellerId,
+            ImageUrl = request.ImageUrl
         };
 
         _dbContext.Products.Add(product);
@@ -96,7 +91,6 @@ public class ProductsController : ControllerBase
         );
     }
 
-    // Изменить товар
     [Authorize(Roles = "Seller,Admin")]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(
@@ -107,14 +101,10 @@ public class ProductsController : ControllerBase
             .FirstOrDefaultAsync(product => product.Id == id);
 
         if (product == null)
-        {
             return NotFound();
-        }
 
         if (!CanManageProduct(product))
-        {
             return Forbid();
-        }
 
         product.Name = request.Name;
         product.Description = request.Description;
@@ -122,6 +112,7 @@ public class ProductsController : ControllerBase
         product.Currency = request.Currency;
         product.Category = request.Category;
         product.IsActive = request.IsActive;
+        product.ImageUrl = request.ImageUrl;
         product.UpdatedAt = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync();
@@ -129,7 +120,6 @@ public class ProductsController : ControllerBase
         return Ok(ToResponse(product));
     }
 
-    // Удалить товар
     [Authorize(Roles = "Seller,Admin")]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
@@ -138,14 +128,10 @@ public class ProductsController : ControllerBase
             .FirstOrDefaultAsync(product => product.Id == id);
 
         if (product == null)
-        {
             return NotFound();
-        }
 
         if (!CanManageProduct(product))
-        {
             return Forbid();
-        }
 
         product.IsActive = false;
         product.UpdatedAt = DateTime.UtcNow;
@@ -158,9 +144,7 @@ public class ProductsController : ControllerBase
     private bool CanManageProduct(Product product)
     {
         if (User.IsInRole("Admin"))
-        {
             return true;
-        }
 
         var userId = User.FindFirstValue(
             ClaimTypes.NameIdentifier);
@@ -180,7 +164,8 @@ public class ProductsController : ControllerBase
             product.SellerId,
             product.CreatedAt,
             product.UpdatedAt,
-            product.IsActive
+            product.IsActive,
+            product.ImageUrl
         );
     }
 }

@@ -86,6 +86,12 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+await using (var migrationScope = app.Services.CreateAsyncScope())
+{
+    var db = migrationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await db.Database.MigrateAsync();
+}
+
 await IdentitySeeder.SeedAsync(
     app.Services,
     app.Configuration);
